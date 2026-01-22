@@ -12,6 +12,19 @@ interface GEOCheck {
   recommendation?: string;
 }
 
+interface SEOMetrics {
+  domainRank?: number;
+  organicTraffic?: number;
+  organicKeywords?: number;
+  onPageScore?: number;
+  pageLoadTime?: number;
+  topKeywords?: Array<{
+    keyword: string;
+    position: number;
+    searchVolume: number;
+  }>;
+}
+
 interface GEOAnalysis {
   url: string;
   title: string;
@@ -24,6 +37,7 @@ interface GEOAnalysis {
     failed: number;
     warnings: number;
   };
+  seoMetrics?: SEOMetrics;
 }
 
 const categories = [
@@ -138,6 +152,63 @@ function CategoryBlock({ category, checks }: { category: typeof categories[0]; c
           <CheckItem key={idx} check={check} />
         ))}
       </div>
+    </div>
+  );
+}
+
+function SEOMetricsPanel({ metrics }: { metrics: SEOMetrics }) {
+  return (
+    <div className="border border-zinc-900 p-6">
+      <h3 className="text-lg font-medium mb-6">Search Intelligence</h3>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+        {metrics.domainRank !== undefined && (
+          <div>
+            <p className="text-zinc-500 text-xs uppercase tracking-wider mb-1">Domain Rank</p>
+            <p className="text-2xl font-light font-mono">{metrics.domainRank.toLocaleString()}</p>
+          </div>
+        )}
+        {metrics.organicTraffic !== undefined && (
+          <div>
+            <p className="text-zinc-500 text-xs uppercase tracking-wider mb-1">Est. Traffic</p>
+            <p className="text-2xl font-light font-mono">{metrics.organicTraffic.toLocaleString()}</p>
+          </div>
+        )}
+        {metrics.organicKeywords !== undefined && (
+          <div>
+            <p className="text-zinc-500 text-xs uppercase tracking-wider mb-1">Keywords</p>
+            <p className="text-2xl font-light font-mono">{metrics.organicKeywords.toLocaleString()}</p>
+          </div>
+        )}
+        {metrics.onPageScore !== undefined && (
+          <div>
+            <p className="text-zinc-500 text-xs uppercase tracking-wider mb-1">On-Page Score</p>
+            <p className={`text-2xl font-light font-mono ${getScoreColor(metrics.onPageScore).text}`}>
+              {metrics.onPageScore}
+            </p>
+          </div>
+        )}
+      </div>
+
+      {metrics.topKeywords && metrics.topKeywords.length > 0 && (
+        <div className="mt-8">
+          <p className="text-zinc-500 text-xs uppercase tracking-wider mb-4">Top Ranking Keywords</p>
+          <div className="space-y-2">
+            {metrics.topKeywords.map((kw, idx) => (
+              <div key={idx} className="flex items-center justify-between py-2 border-b border-zinc-900 last:border-b-0">
+                <span className="text-sm truncate flex-1">{kw.keyword}</span>
+                <div className="flex items-center gap-4 shrink-0">
+                  <span className={`font-mono text-sm ${kw.position <= 3 ? 'text-emerald-400' : kw.position <= 10 ? 'text-amber-400' : 'text-zinc-500'}`}>
+                    #{kw.position}
+                  </span>
+                  <span className="text-zinc-500 text-sm font-mono w-20 text-right">
+                    {kw.searchVolume.toLocaleString()} vol
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -347,6 +418,13 @@ export default function Home() {
                 Analyze another URL
               </button>
             </div>
+
+            {/* SEO Metrics (if available) */}
+            {analysis.seoMetrics && (
+              <div className="mb-12">
+                <SEOMetricsPanel metrics={analysis.seoMetrics} />
+              </div>
+            )}
 
             {/* Lead Capture */}
             <div className="mb-12">

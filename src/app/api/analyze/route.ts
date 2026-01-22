@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import axios from 'axios';
 import * as cheerio from 'cheerio';
+import { getDataForSEOMetrics, DataForSEOMetrics } from '@/lib/dataforseo';
 
 interface GEOCheck {
   name: string;
@@ -23,6 +24,18 @@ interface GEOAnalysis {
     passed: number;
     failed: number;
     warnings: number;
+  };
+  seoMetrics?: {
+    domainRank?: number;
+    organicTraffic?: number;
+    organicKeywords?: number;
+    onPageScore?: number;
+    pageLoadTime?: number;
+    topKeywords?: Array<{
+      keyword: string;
+      position: number;
+      searchVolume: number;
+    }>;
   };
 }
 
@@ -61,6 +74,13 @@ export async function POST(request: NextRequest) {
 
     const html = response.data;
     const $ = cheerio.load(html);
+
+    // Fetch DataForSEO metrics in parallel (non-blocking)
+    let seoMetrics: DataForSEOMetrics | null = null;
+    const seoMetricsPromise = getDataForSEOMetrics(normalizedUrl).catch(err => {
+      console.error('DataForSEO error:', err);
+      return null;
+    });
 
     const checks: GEOCheck[] = [];
 
@@ -450,6 +470,87 @@ export async function POST(request: NextRequest) {
     });
 
     // ========================================
+    // DATAFORSEO ENHANCED CHECKS
+    // ========================================
+
+    // Wait for DataForSEO metrics
+    seoMetrics = await seoMetricsPromise;
+
+    if (seoMetrics?.available) {
+      // Domain Authority Check (based on rank)
+      const domainRank = seoMetrics.domainRank;
+      const hasDomainAuthority = domainRank !== undefined && domainRank > 0;
+      const domainScore = domainRank ? Math.min(5, Math.round(domainRank / 200)) : 0;
+
+      checks.push({
+        name: 'Domain Authority',
+        category: 'E-E-A-T Signals',
+        passed: domainScore >= 3,
+        score: domainScore,
+        maxScore: 5,
+        details: domainRank
+          ? `Domain rank: ${domainRank.toLocaleString()} (higher is better)`
+          : 'Unable to determine domain rank',
+        recommendation: domainScore < 3 ? 'Build quality backlinks and create valuable content to improve domain authority' : undefined,
+      });
+
+      // Organic Visibility Check
+      const organicKeywords = seoMetrics.organicKeywords;
+      const hasOrganicVisibility = organicKeywords !== undefined && organicKeywords > 100;
+      const visibilityScore = organicKeywords
+        ? (organicKeywords > 1000 ? 5 : organicKeywords > 500 ? 4 : organicKeywords > 100 ? 3 : organicKeywords > 10 ? 2 : 1)
+        : 0;
+
+      checks.push({
+        name: 'Organic Search Visibility',
+        category: 'E-E-A-T Signals',
+        passed: hasOrganicVisibility,
+        score: visibilityScore,
+        maxScore: 5,
+        details: organicKeywords !== undefined
+          ? `Ranking for ${organicKeywords.toLocaleString()} keywords organically`
+          : 'Unable to determine organic visibility',
+        recommendation: !hasOrganicVisibility ? 'Create more content targeting relevant keywords to increase organic visibility' : undefined,
+      });
+
+      // Page Performance Check (from on-page analysis)
+      const pageLoadTime = seoMetrics.pageLoadTime;
+      const hasGoodPerformance = pageLoadTime !== undefined && pageLoadTime < 3000;
+      const performanceScore = pageLoadTime
+        ? (pageLoadTime < 2000 ? 4 : pageLoadTime < 3000 ? 3 : pageLoadTime < 5000 ? 2 : 1)
+        : 0;
+
+      if (pageLoadTime !== undefined) {
+        checks.push({
+          name: 'Page Load Performance',
+          category: 'Meta & Technical',
+          passed: hasGoodPerformance,
+          score: performanceScore,
+          maxScore: 4,
+          details: `Time to interactive: ${(pageLoadTime / 1000).toFixed(1)}s`,
+          recommendation: !hasGoodPerformance ? 'Optimize images, minimize JavaScript, and use caching to improve load time' : undefined,
+        });
+      }
+
+      // On-Page SEO Score
+      const onPageScore = seoMetrics.onPageScore;
+      if (onPageScore !== undefined) {
+        const onPagePassed = onPageScore >= 70;
+        const onPagePoints = Math.round(onPageScore / 20); // 0-5 scale
+
+        checks.push({
+          name: 'On-Page SEO Score',
+          category: 'Meta & Technical',
+          passed: onPagePassed,
+          score: onPagePoints,
+          maxScore: 5,
+          details: `DataForSEO on-page score: ${onPageScore}/100`,
+          recommendation: !onPagePassed ? 'Address technical SEO issues identified by the on-page analysis' : undefined,
+        });
+      }
+    }
+
+    // ========================================
     // CALCULATE FINAL SCORES
     // ========================================
 
@@ -469,6 +570,15 @@ export async function POST(request: NextRequest) {
         failed: checks.filter(c => !c.passed && c.score === 0).length,
         warnings: checks.filter(c => !c.passed && c.score > 0).length,
       },
+      // Include SEO metrics if available
+      seoMetrics: seoMetrics?.available ? {
+        domainRank: seoMetrics.domainRank,
+        organicTraffic: seoMetrics.organicTraffic,
+        organicKeywords: seoMetrics.organicKeywords,
+        onPageScore: seoMetrics.onPageScore,
+        pageLoadTime: seoMetrics.pageLoadTime,
+        topKeywords: seoMetrics.topKeywords,
+      } : undefined,
     };
 
     return NextResponse.json(analysis);
