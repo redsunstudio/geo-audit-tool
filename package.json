@@ -1,6 +1,7 @@
 {
   "name": "geo-audit-tool",
   "version": "0.1.0",
+  "description": "Free GEO Audit Tool - Check if your website is optimized for AI search",
   "private": true,
   "scripts": {
     "dev": "next dev",
