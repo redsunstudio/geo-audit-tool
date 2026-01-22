@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 interface GEOCheck {
   name: string;
@@ -34,16 +34,27 @@ const categories = [
   { name: 'AI Snippet Optimization', key: 'ai' },
 ];
 
-function ScoreDisplay({ score, maxScore, grade }: { score: number; maxScore: number; grade: string }) {
+// Traffic light color helper
+function getScoreColor(percentage: number) {
+  if (percentage >= 70) return { text: 'text-emerald-400', bg: 'bg-emerald-400', border: 'border-emerald-400/30' };
+  if (percentage >= 40) return { text: 'text-amber-400', bg: 'bg-amber-400', border: 'border-amber-400/30' };
+  return { text: 'text-red-400', bg: 'bg-red-400', border: 'border-red-400/30' };
+}
+
+function ScoreDisplay({ score, maxScore }: { score: number; maxScore: number; grade: string }) {
   const percentage = Math.round((score / maxScore) * 100);
+  const colors = getScoreColor(percentage);
 
   return (
     <div className="text-center">
-      <div className="text-8xl md:text-9xl font-light tracking-tighter">
-        {percentage}
+      <div className="flex items-baseline justify-center gap-2">
+        <span className={`text-8xl md:text-9xl font-light tracking-tighter ${colors.text}`}>
+          {percentage}
+        </span>
+        <span className="text-3xl md:text-4xl font-light text-zinc-600">/100</span>
       </div>
       <div className="text-zinc-500 uppercase tracking-[0.3em] text-sm mt-2">
-        Score
+        GEO Score
       </div>
     </div>
   );
@@ -52,25 +63,30 @@ function ScoreDisplay({ score, maxScore, grade }: { score: number; maxScore: num
 function CheckItem({ check }: { check: GEOCheck }) {
   const [expanded, setExpanded] = useState(false);
 
+  // Determine color based on pass/partial/fail
+  const getCheckColor = () => {
+    if (check.passed) return { dot: 'bg-emerald-400', text: 'text-emerald-400' };
+    if (check.score > 0) return { dot: 'bg-amber-400', text: 'text-amber-400' };
+    return { dot: 'bg-red-400', text: 'text-red-400' };
+  };
+
+  const colors = getCheckColor();
+
   return (
     <div
-      className="border-b border-zinc-900 last:border-b-0 cursor-pointer"
+      className="border-b border-zinc-900 last:border-b-0 cursor-pointer hover:bg-zinc-900/30 transition-colors"
       onClick={() => setExpanded(!expanded)}
     >
-      <div className="py-5 flex items-center justify-between gap-4">
+      <div className="py-5 px-6 flex items-center justify-between gap-4">
         <div className="flex items-center gap-4 flex-1 min-w-0">
-          <div className={`w-2 h-2 rounded-full shrink-0 ${
-            check.passed ? 'bg-white' : check.score > 0 ? 'bg-zinc-500' : 'bg-zinc-700'
-          }`} />
+          <div className={`w-2 h-2 rounded-full shrink-0 ${colors.dot}`} />
           <div className="min-w-0">
             <h4 className="font-medium truncate">{check.name}</h4>
             <p className="text-zinc-500 text-sm truncate">{check.details}</p>
           </div>
         </div>
         <div className="text-right shrink-0 flex items-center gap-4">
-          <span className={`font-mono text-sm ${
-            check.passed ? 'text-white' : 'text-zinc-500'
-          }`}>
+          <span className={`font-mono text-sm ${colors.text}`}>
             {check.score}/{check.maxScore}
           </span>
           <svg
@@ -84,7 +100,7 @@ function CheckItem({ check }: { check: GEOCheck }) {
         </div>
       </div>
       {expanded && check.recommendation && (
-        <div className="pb-5 pl-6 pr-4">
+        <div className="pb-5 px-6 pl-12">
           <p className="text-zinc-400 text-sm leading-relaxed">
             {check.recommendation}
           </p>
@@ -99,24 +115,25 @@ function CategoryBlock({ category, checks }: { category: typeof categories[0]; c
   const categoryScore = categoryChecks.reduce((acc, c) => acc + c.score, 0);
   const categoryMax = categoryChecks.reduce((acc, c) => acc + c.maxScore, 0);
   const percentage = Math.round((categoryScore / categoryMax) * 100);
+  const colors = getScoreColor(percentage);
 
   return (
-    <div className="border border-zinc-900 rounded-none">
+    <div className="border border-zinc-900">
       <div className="p-6 border-b border-zinc-900">
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-medium">{category.name}</h3>
           <div className="flex items-center gap-4">
             <div className="w-32 h-[2px] bg-zinc-900 overflow-hidden">
               <div
-                className="h-full bg-white animate-progress"
+                className={`h-full ${colors.bg} animate-progress`}
                 style={{ width: `${percentage}%` }}
               />
             </div>
-            <span className="font-mono text-sm text-zinc-500 w-12 text-right">{percentage}%</span>
+            <span className={`font-mono text-sm w-16 text-right ${colors.text}`}>{percentage}%</span>
           </div>
         </div>
       </div>
-      <div className="divide-y divide-zinc-900">
+      <div>
         {categoryChecks.map((check, idx) => (
           <CheckItem key={idx} check={check} />
         ))}
@@ -172,6 +189,13 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [analysis, setAnalysis] = useState<GEOAnalysis | null>(null);
   const [error, setError] = useState('');
+
+  // Scroll to top when analysis loads
+  useEffect(() => {
+    if (analysis) {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  }, [analysis]);
 
   const handleAnalyze = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -253,7 +277,7 @@ export default function Home() {
                 </button>
               </div>
               {error && (
-                <p className="mt-4 text-zinc-500 text-sm">{error}</p>
+                <p className="mt-4 text-red-400 text-sm">{error}</p>
               )}
             </form>
 
@@ -301,15 +325,15 @@ export default function Home() {
               </div>
               <div className="flex justify-center gap-12 mt-8 text-sm">
                 <div>
-                  <span className="text-white font-mono">{analysis.summary.passed}</span>
+                  <span className="text-emerald-400 font-mono">{analysis.summary.passed}</span>
                   <span className="text-zinc-600 ml-2">passed</span>
                 </div>
                 <div>
-                  <span className="text-zinc-500 font-mono">{analysis.summary.warnings}</span>
+                  <span className="text-amber-400 font-mono">{analysis.summary.warnings}</span>
                   <span className="text-zinc-600 ml-2">warnings</span>
                 </div>
                 <div>
-                  <span className="text-zinc-700 font-mono">{analysis.summary.failed}</span>
+                  <span className="text-red-400 font-mono">{analysis.summary.failed}</span>
                   <span className="text-zinc-600 ml-2">failed</span>
                 </div>
               </div>
