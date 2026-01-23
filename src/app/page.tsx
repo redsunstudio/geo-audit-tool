@@ -77,7 +77,6 @@ function ScoreDisplay({ score, maxScore }: { score: number; maxScore: number; gr
 function CheckItem({ check }: { check: GEOCheck }) {
   const [expanded, setExpanded] = useState(false);
 
-  // Determine color based on pass/partial/fail
   const getCheckColor = () => {
     if (check.passed) return { dot: 'bg-emerald-400', text: 'text-emerald-400' };
     if (check.score > 0) return { dot: 'bg-amber-400', text: 'text-amber-400' };
@@ -213,9 +212,15 @@ function SEOMetricsPanel({ metrics }: { metrics: SEOMetrics }) {
   );
 }
 
-function LeadCapture({ analysis }: { analysis: GEOAnalysis }) {
+// Gated score preview - shows before email is entered
+function ScorePreview({ analysis, onUnlock }: { analysis: GEOAnalysis; onUnlock: (email: string) => void }) {
   const [email, setEmail] = useState('');
-  const [status, setStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
+  const [status, setStatus] = useState<'idle' | 'sending' | 'error'>('idle');
+
+  const percentage = Math.round((analysis.overallScore / analysis.maxScore) * 100);
+  const criticalIssues = analysis.checks.filter(c => !c.passed && c.score === 0).length;
+  const warningIssues = analysis.checks.filter(c => !c.passed && c.score > 0).length;
+  const totalIssues = criticalIssues + warningIssues;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -229,7 +234,7 @@ function LeadCapture({ analysis }: { analysis: GEOAnalysis }) {
       });
 
       if (response.ok) {
-        setStatus('sent');
+        onUnlock(email);
       } else {
         setStatus('error');
       }
@@ -238,40 +243,159 @@ function LeadCapture({ analysis }: { analysis: GEOAnalysis }) {
     }
   };
 
-  if (status === 'sent') {
-    return (
-      <div className="border border-zinc-800 p-8 text-center">
-        <p className="text-zinc-400">Report sent to {email}</p>
-      </div>
-    );
-  }
-
   return (
-    <div className="border border-zinc-900 p-8">
-      <h3 className="text-lg font-medium mb-2">Get Full Report</h3>
-      <p className="text-zinc-500 text-sm mb-6">Receive a detailed report with prioritized recommendations.</p>
-      <form onSubmit={handleSubmit} className="flex gap-3">
-        <input
-          type="email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          placeholder="email@example.com"
-          required
-          disabled={status === 'sending'}
-          className="flex-1 px-4 py-3 bg-transparent border border-zinc-800 text-white placeholder-zinc-600 focus:outline-none focus:border-zinc-600 font-mono text-sm disabled:opacity-50"
-        />
-        <button
-          type="submit"
-          disabled={status === 'sending'}
-          className="px-6 py-3 bg-white text-black font-medium text-sm hover:bg-zinc-200 transition-colors disabled:opacity-50"
-        >
-          {status === 'sending' ? 'Sending...' : 'Send'}
-        </button>
-      </form>
-      {status === 'error' && (
-        <p className="text-red-400 text-sm mt-3">Failed to send. Please try again.</p>
-      )}
-    </div>
+    <section className="min-h-screen flex flex-col justify-center px-6 pt-16">
+      <div className="max-w-2xl mx-auto w-full text-center">
+        {/* Score */}
+        <div className="mb-12">
+          <ScoreDisplay
+            score={analysis.overallScore}
+            maxScore={analysis.maxScore}
+            grade={analysis.grade}
+          />
+        </div>
+
+        {/* Urgency message */}
+        <div className="mb-12">
+          {totalIssues > 0 ? (
+            <>
+              <p className="text-xl md:text-2xl font-light mb-4">
+                <span className="text-red-400">{totalIssues} issue{totalIssues !== 1 ? 's' : ''}</span> need{totalIssues === 1 ? 's' : ''} your attention.
+              </p>
+              <p className="text-zinc-500">
+                {criticalIssues > 0 && (
+                  <span className="text-red-400">{criticalIssues} critical</span>
+                )}
+                {criticalIssues > 0 && warningIssues > 0 && ' and '}
+                {warningIssues > 0 && (
+                  <span className="text-amber-400">{warningIssues} warning{warningIssues !== 1 ? 's' : ''}</span>
+                )}
+                {' '}detected in your GEO audit.
+              </p>
+            </>
+          ) : (
+            <p className="text-xl md:text-2xl font-light text-emerald-400">
+              Looking good. See the full breakdown below.
+            </p>
+          )}
+        </div>
+
+        {/* Email capture */}
+        <div className="border border-zinc-800 p-8 md:p-12">
+          <h3 className="text-lg font-medium mb-2">Unlock Your Full Report</h3>
+          <p className="text-zinc-500 text-sm mb-8">
+            Enter your email to instantly access your complete GEO audit with actionable recommendations.
+          </p>
+          <form onSubmit={handleSubmit} className="flex flex-col sm:flex-row gap-3">
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="you@example.com"
+              required
+              disabled={status === 'sending'}
+              className="flex-1 px-5 py-4 bg-transparent border border-zinc-800 text-white placeholder-zinc-600 focus:outline-none focus:border-zinc-500 text-base disabled:opacity-50"
+            />
+            <button
+              type="submit"
+              disabled={status === 'sending' || !email}
+              className="px-8 py-4 bg-white text-black font-medium hover:bg-zinc-200 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+            >
+              {status === 'sending' ? 'Sending...' : 'Get My Report'}
+            </button>
+          </form>
+          {status === 'error' && (
+            <p className="text-red-400 text-sm mt-4">Something went wrong. Please try again.</p>
+          )}
+          <p className="text-zinc-600 text-xs mt-6">
+            We&apos;ll also send a copy to your inbox.
+          </p>
+        </div>
+
+        {/* Teaser of what's in the report */}
+        <div className="mt-12 text-zinc-600 text-sm">
+          <p className="mb-4 uppercase tracking-wider text-xs">Full report includes</p>
+          <div className="flex flex-wrap justify-center gap-4">
+            {categories.map((cat) => (
+              <span key={cat.key} className="px-3 py-1 border border-zinc-800 text-zinc-500">
+                {cat.name}
+              </span>
+            ))}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// Full report - shows after email is entered
+function FullReport({ analysis, email }: { analysis: GEOAnalysis; email: string }) {
+  return (
+    <section className="min-h-screen px-6 pt-24 pb-16">
+      <div className="max-w-5xl mx-auto">
+        {/* Score Header */}
+        <div className="text-center mb-20">
+          <ScoreDisplay
+            score={analysis.overallScore}
+            maxScore={analysis.maxScore}
+            grade={analysis.grade}
+          />
+          <div className="mt-8 space-y-2">
+            <h2 className="text-xl font-light truncate max-w-2xl mx-auto" title={analysis.title}>
+              {analysis.title || 'Untitled'}
+            </h2>
+            <p className="text-zinc-600 text-sm font-mono truncate max-w-xl mx-auto">
+              {analysis.url}
+            </p>
+          </div>
+          <div className="flex justify-center gap-12 mt-8 text-sm">
+            <div>
+              <span className="text-emerald-400 font-mono">{analysis.summary.passed}</span>
+              <span className="text-zinc-600 ml-2">passed</span>
+            </div>
+            <div>
+              <span className="text-amber-400 font-mono">{analysis.summary.warnings}</span>
+              <span className="text-zinc-600 ml-2">warnings</span>
+            </div>
+            <div>
+              <span className="text-red-400 font-mono">{analysis.summary.failed}</span>
+              <span className="text-zinc-600 ml-2">failed</span>
+            </div>
+          </div>
+          <p className="mt-6 text-zinc-500 text-sm">
+            Report sent to {email}
+          </p>
+        </div>
+
+        {/* SEO Metrics (if available) */}
+        {analysis.seoMetrics && (
+          <div className="mb-12">
+            <SEOMetricsPanel metrics={analysis.seoMetrics} />
+          </div>
+        )}
+
+        {/* Categories */}
+        <div className="space-y-6">
+          {categories.map((category) => (
+            <CategoryBlock key={category.key} category={category} checks={analysis.checks} />
+          ))}
+        </div>
+
+        {/* CTA */}
+        <div className="mt-20 text-center border-t border-zinc-900 pt-20">
+          <p className="text-zinc-500 uppercase tracking-[0.2em] text-xs mb-4">Need help?</p>
+          <h3 className="text-2xl font-light mb-6">Improve your GEO score</h3>
+          <a
+            href="https://johnisaacson.co.uk/#contact"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-block px-8 py-4 border border-white text-white hover:bg-white hover:text-black transition-colors text-sm tracking-wide"
+          >
+            Book a Strategy Call
+          </a>
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -280,6 +404,7 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [analysis, setAnalysis] = useState<GEOAnalysis | null>(null);
   const [error, setError] = useState('');
+  const [unlockedEmail, setUnlockedEmail] = useState<string | null>(null);
 
   // Scroll to top when analysis loads
   useEffect(() => {
@@ -295,6 +420,7 @@ export default function Home() {
     setLoading(true);
     setError('');
     setAnalysis(null);
+    setUnlockedEmail(null);
 
     try {
       const response = await fetch('/api/analyze', {
@@ -317,13 +443,21 @@ export default function Home() {
     }
   };
 
+  const handleStartOver = () => {
+    setAnalysis(null);
+    setUrl('');
+    setUnlockedEmail(null);
+  };
+
   return (
     <div className="min-h-screen bg-black text-white">
       {/* Header */}
       <header className="fixed top-0 left-0 right-0 z-50 bg-black/80 backdrop-blur-sm border-b border-zinc-900">
         <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <span className="text-sm font-medium tracking-wide">GEO AUDIT</span>
+            <button onClick={handleStartOver} className="text-sm font-medium tracking-wide hover:text-zinc-400 transition-colors">
+              GEO AUDIT
+            </button>
           </div>
           <a
             href="https://johnisaacson.co.uk"
@@ -395,84 +529,17 @@ export default function Home() {
         </section>
       )}
 
-      {/* Results */}
-      {analysis && !loading && (
-        <section className="min-h-screen px-6 pt-24 pb-16">
-          <div className="max-w-5xl mx-auto">
-            {/* Score Header */}
-            <div className="text-center mb-20">
-              <ScoreDisplay
-                score={analysis.overallScore}
-                maxScore={analysis.maxScore}
-                grade={analysis.grade}
-              />
-              <div className="mt-8 space-y-2">
-                <h2 className="text-xl font-light truncate max-w-2xl mx-auto" title={analysis.title}>
-                  {analysis.title || 'Untitled'}
-                </h2>
-                <p className="text-zinc-600 text-sm font-mono truncate max-w-xl mx-auto">
-                  {analysis.url}
-                </p>
-              </div>
-              <div className="flex justify-center gap-12 mt-8 text-sm">
-                <div>
-                  <span className="text-emerald-400 font-mono">{analysis.summary.passed}</span>
-                  <span className="text-zinc-600 ml-2">passed</span>
-                </div>
-                <div>
-                  <span className="text-amber-400 font-mono">{analysis.summary.warnings}</span>
-                  <span className="text-zinc-600 ml-2">warnings</span>
-                </div>
-                <div>
-                  <span className="text-red-400 font-mono">{analysis.summary.failed}</span>
-                  <span className="text-zinc-600 ml-2">failed</span>
-                </div>
-              </div>
-              <button
-                onClick={() => {
-                  setAnalysis(null);
-                  setUrl('');
-                }}
-                className="mt-8 text-zinc-500 hover:text-white text-sm underline underline-offset-4"
-              >
-                Analyze another URL
-              </button>
-            </div>
+      {/* Gated Score Preview (before email) */}
+      {analysis && !loading && !unlockedEmail && (
+        <ScorePreview
+          analysis={analysis}
+          onUnlock={(email) => setUnlockedEmail(email)}
+        />
+      )}
 
-            {/* SEO Metrics (if available) */}
-            {analysis.seoMetrics && (
-              <div className="mb-12">
-                <SEOMetricsPanel metrics={analysis.seoMetrics} />
-              </div>
-            )}
-
-            {/* Lead Capture */}
-            <div className="mb-12">
-              <LeadCapture analysis={analysis} />
-            </div>
-
-            {/* Categories */}
-            <div className="space-y-6">
-              {categories.map((category) => (
-                <CategoryBlock key={category.key} category={category} checks={analysis.checks} />
-              ))}
-            </div>
-
-            {/* CTA */}
-            <div className="mt-20 text-center border-t border-zinc-900 pt-20">
-              <p className="text-zinc-500 uppercase tracking-[0.2em] text-xs mb-4">Need help?</p>
-              <h3 className="text-2xl font-light mb-6">Improve your GEO score</h3>
-              <a
-                href="https://johnisaacson.co.uk/#contact"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-block px-8 py-4 border border-white text-white hover:bg-white hover:text-black transition-colors text-sm tracking-wide"
-              >
-                Book a Strategy Call
-              </a>
-            </div>
-          </div>
-        </section>
+      {/* Full Report (after email) */}
+      {analysis && !loading && unlockedEmail && (
+        <FullReport analysis={analysis} email={unlockedEmail} />
       )}
 
       {/* Footer */}
