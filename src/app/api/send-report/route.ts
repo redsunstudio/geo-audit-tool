@@ -215,12 +215,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Email service not configured' }, { status: 500 });
     }
 
-    // Create transporter
+    // Create transporter with explicit SMTP settings
     const transporter = nodemailer.createTransport({
-      service: 'gmail',
+      host: 'smtp.gmail.com',
+      port: 587,
+      secure: false,
       auth: {
         user: gmailUser,
         pass: gmailAppPassword,
+      },
+      tls: {
+        rejectUnauthorized: false,
       },
     });
 
