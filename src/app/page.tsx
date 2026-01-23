@@ -215,18 +215,33 @@ function SEOMetricsPanel({ metrics }: { metrics: SEOMetrics }) {
 
 function LeadCapture({ analysis }: { analysis: GEOAnalysis }) {
   const [email, setEmail] = useState('');
-  const [submitted, setSubmitted] = useState(false);
+  const [status, setStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    console.log('Lead captured:', email, analysis.url);
-    setSubmitted(true);
+    setStatus('sending');
+
+    try {
+      const response = await fetch('/api/send-report', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, analysis }),
+      });
+
+      if (response.ok) {
+        setStatus('sent');
+      } else {
+        setStatus('error');
+      }
+    } catch {
+      setStatus('error');
+    }
   };
 
-  if (submitted) {
+  if (status === 'sent') {
     return (
       <div className="border border-zinc-800 p-8 text-center">
-        <p className="text-zinc-400">Report sent. Check your inbox.</p>
+        <p className="text-zinc-400">Report sent to {email}</p>
       </div>
     );
   }
@@ -234,7 +249,7 @@ function LeadCapture({ analysis }: { analysis: GEOAnalysis }) {
   return (
     <div className="border border-zinc-900 p-8">
       <h3 className="text-lg font-medium mb-2">Get Full Report</h3>
-      <p className="text-zinc-500 text-sm mb-6">Receive a detailed PDF with prioritized recommendations.</p>
+      <p className="text-zinc-500 text-sm mb-6">Receive a detailed report with prioritized recommendations.</p>
       <form onSubmit={handleSubmit} className="flex gap-3">
         <input
           type="email"
@@ -242,15 +257,20 @@ function LeadCapture({ analysis }: { analysis: GEOAnalysis }) {
           onChange={(e) => setEmail(e.target.value)}
           placeholder="email@example.com"
           required
-          className="flex-1 px-4 py-3 bg-transparent border border-zinc-800 text-white placeholder-zinc-600 focus:outline-none focus:border-zinc-600 font-mono text-sm"
+          disabled={status === 'sending'}
+          className="flex-1 px-4 py-3 bg-transparent border border-zinc-800 text-white placeholder-zinc-600 focus:outline-none focus:border-zinc-600 font-mono text-sm disabled:opacity-50"
         />
         <button
           type="submit"
-          className="px-6 py-3 bg-white text-black font-medium text-sm hover:bg-zinc-200 transition-colors"
+          disabled={status === 'sending'}
+          className="px-6 py-3 bg-white text-black font-medium text-sm hover:bg-zinc-200 transition-colors disabled:opacity-50"
         >
-          Send
+          {status === 'sending' ? 'Sending...' : 'Send'}
         </button>
       </form>
+      {status === 'error' && (
+        <p className="text-red-400 text-sm mt-3">Failed to send. Please try again.</p>
+      )}
     </div>
   );
 }
