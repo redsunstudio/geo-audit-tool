@@ -139,7 +139,7 @@ export async function POST(request: NextRequest) {
 
     // Send email with Resend
     const { data, error } = await resend.emails.send({
-      from: 'GEO Audit <reports@updates.johnisaacson.co.uk>',
+      from: 'GEO Audit <onboarding@resend.dev>',
       to: email,
       subject: `Your GEO Audit Report: ${percentage}/100 - ${domain}`,
       html: emailHtml,
