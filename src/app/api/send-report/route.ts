@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import nodemailer from 'nodemailer';
+import { Resend } from 'resend';
+import { generatePDFReport } from '@/lib/pdf-generator';
 
 interface GEOCheck {
   name: string;
@@ -38,164 +39,16 @@ interface GEOAnalysis {
 }
 
 function getScoreColor(percentage: number): string {
-  if (percentage >= 70) return '#34d399'; // emerald
-  if (percentage >= 40) return '#fbbf24'; // amber
-  return '#f87171'; // red
+  if (percentage >= 70) return '#34d399';
+  if (percentage >= 40) return '#fbbf24';
+  return '#f87171';
 }
 
-function generateEmailHTML(analysis: GEOAnalysis): string {
-  const percentage = Math.round((analysis.overallScore / analysis.maxScore) * 100);
-  const scoreColor = getScoreColor(percentage);
-
-  const categories = [
-    { name: 'Schema Markup', key: 'Schema Markup' },
-    { name: 'Content Structure', key: 'Content Structure' },
-    { name: 'E-E-A-T Signals', key: 'E-E-A-T Signals' },
-    { name: 'Meta & Technical', key: 'Meta & Technical' },
-    { name: 'AI Snippet Optimization', key: 'AI Snippet Optimization' },
-  ];
-
-  const categoryHTML = categories.map(cat => {
-    const catChecks = analysis.checks.filter(c => c.category === cat.key);
-    if (catChecks.length === 0) return '';
-
-    const catScore = catChecks.reduce((acc, c) => acc + c.score, 0);
-    const catMax = catChecks.reduce((acc, c) => acc + c.maxScore, 0);
-    const catPercentage = Math.round((catScore / catMax) * 100);
-    const catColor = getScoreColor(catPercentage);
-
-    const checksHTML = catChecks.map(check => {
-      const checkPercentage = Math.round((check.score / check.maxScore) * 100);
-      const checkColor = getScoreColor(checkPercentage);
-      const status = check.passed ? 'PASS' : (check.score > 0 ? 'PARTIAL' : 'FAIL');
-
-      return `
-        <tr>
-          <td style="padding: 12px 0; border-bottom: 1px solid #27272a;">
-            <div style="display: flex; align-items: center;">
-              <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: ${checkColor}; margin-right: 12px;"></span>
-              <strong>${check.name}</strong>
-            </div>
-            <div style="color: #71717a; font-size: 13px; margin-top: 4px;">${check.details}</div>
-            ${check.recommendation ? `<div style="color: #fbbf24; font-size: 13px; margin-top: 4px;">Recommendation: ${check.recommendation}</div>` : ''}
-          </td>
-          <td style="padding: 12px 0; border-bottom: 1px solid #27272a; text-align: right; color: ${checkColor}; font-family: monospace;">
-            ${check.score}/${check.maxScore}
-          </td>
-        </tr>
-      `;
-    }).join('');
-
-    return `
-      <div style="margin-bottom: 32px;">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-          <h3 style="margin: 0; font-size: 16px; font-weight: 500;">${cat.name}</h3>
-          <span style="color: ${catColor}; font-family: monospace;">${catPercentage}%</span>
-        </div>
-        <div style="height: 4px; background: #27272a; border-radius: 2px; margin-bottom: 16px;">
-          <div style="height: 100%; width: ${catPercentage}%; background: ${catColor}; border-radius: 2px;"></div>
-        </div>
-        <table style="width: 100%; border-collapse: collapse;">
-          ${checksHTML}
-        </table>
-      </div>
-    `;
-  }).join('');
-
-  const seoMetricsHTML = analysis.seoMetrics ? `
-    <div style="background: #0a0a0a; border: 1px solid #27272a; padding: 24px; margin-bottom: 32px;">
-      <h3 style="margin: 0 0 16px 0; font-size: 16px; font-weight: 500;">Search Intelligence</h3>
-      <table style="width: 100%;">
-        <tr>
-          ${analysis.seoMetrics.domainRank !== undefined ? `
-            <td style="padding: 8px 0;">
-              <div style="color: #71717a; font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em;">Domain Rank</div>
-              <div style="font-size: 24px; font-family: monospace;">${analysis.seoMetrics.domainRank.toLocaleString()}</div>
-            </td>
-          ` : ''}
-          ${analysis.seoMetrics.organicTraffic !== undefined ? `
-            <td style="padding: 8px 0;">
-              <div style="color: #71717a; font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em;">Est. Traffic</div>
-              <div style="font-size: 24px; font-family: monospace;">${analysis.seoMetrics.organicTraffic.toLocaleString()}</div>
-            </td>
-          ` : ''}
-          ${analysis.seoMetrics.organicKeywords !== undefined ? `
-            <td style="padding: 8px 0;">
-              <div style="color: #71717a; font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em;">Keywords</div>
-              <div style="font-size: 24px; font-family: monospace;">${analysis.seoMetrics.organicKeywords.toLocaleString()}</div>
-            </td>
-          ` : ''}
-          ${analysis.seoMetrics.onPageScore !== undefined ? `
-            <td style="padding: 8px 0;">
-              <div style="color: #71717a; font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em;">On-Page Score</div>
-              <div style="font-size: 24px; font-family: monospace; color: ${getScoreColor(analysis.seoMetrics.onPageScore)};">${analysis.seoMetrics.onPageScore}</div>
-            </td>
-          ` : ''}
-        </tr>
-      </table>
-    </div>
-  ` : '';
-
-  return `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <meta charset="utf-8">
-      <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    </head>
-    <body style="margin: 0; padding: 0; background: #000000; color: #ffffff; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
-      <div style="max-width: 600px; margin: 0 auto; padding: 40px 20px;">
-
-        <!-- Header -->
-        <div style="text-align: center; margin-bottom: 48px;">
-          <h1 style="margin: 0 0 8px 0; font-size: 14px; font-weight: 400; color: #71717a; text-transform: uppercase; letter-spacing: 0.2em;">GEO Audit Report</h1>
-          <div style="font-size: 13px; color: #52525b;">${analysis.url}</div>
-        </div>
-
-        <!-- Score -->
-        <div style="text-align: center; margin-bottom: 48px;">
-          <div style="font-size: 72px; font-weight: 300; color: ${scoreColor}; line-height: 1;">
-            ${percentage}<span style="font-size: 32px; color: #52525b;">/100</span>
-          </div>
-          <div style="color: #71717a; text-transform: uppercase; letter-spacing: 0.3em; font-size: 12px; margin-top: 8px;">GEO Score</div>
-        </div>
-
-        <!-- Summary -->
-        <div style="display: flex; justify-content: center; gap: 32px; margin-bottom: 48px; text-align: center;">
-          <div>
-            <div style="font-size: 24px; color: #34d399;">${analysis.summary.passed}</div>
-            <div style="font-size: 11px; color: #71717a; text-transform: uppercase;">Passed</div>
-          </div>
-          <div>
-            <div style="font-size: 24px; color: #fbbf24;">${analysis.summary.warnings}</div>
-            <div style="font-size: 11px; color: #71717a; text-transform: uppercase;">Warnings</div>
-          </div>
-          <div>
-            <div style="font-size: 24px; color: #f87171;">${analysis.summary.failed}</div>
-            <div style="font-size: 11px; color: #71717a; text-transform: uppercase;">Failed</div>
-          </div>
-        </div>
-
-        <!-- SEO Metrics -->
-        ${seoMetricsHTML}
-
-        <!-- Categories -->
-        ${categoryHTML}
-
-        <!-- Footer -->
-        <div style="text-align: center; margin-top: 48px; padding-top: 32px; border-top: 1px solid #27272a;">
-          <p style="color: #71717a; font-size: 13px; margin: 0 0 16px 0;">Need help improving your GEO score?</p>
-          <a href="https://johnisaacson.co.uk/#contact" style="display: inline-block; padding: 12px 24px; background: #ffffff; color: #000000; text-decoration: none; font-size: 14px;">Get in Touch</a>
-          <p style="color: #52525b; font-size: 11px; margin-top: 32px;">
-            Powered by GEO Audit Tool<br>
-            <a href="https://geo-audit-tool-production.up.railway.app" style="color: #71717a;">geo-audit-tool-production.up.railway.app</a>
-          </p>
-        </div>
-
-      </div>
-    </body>
-    </html>
-  `;
+function getGrade(percentage: number): string {
+  if (percentage >= 90) return 'Excellent';
+  if (percentage >= 70) return 'Good';
+  if (percentage >= 40) return 'Needs Work';
+  return 'Poor';
 }
 
 export async function POST(request: NextRequest) {
@@ -206,42 +59,105 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Email and analysis data required' }, { status: 400 });
     }
 
-    // Check for Gmail credentials
-    const gmailUser = process.env.GMAIL_USER;
-    const gmailAppPassword = process.env.GMAIL_APP_PASSWORD;
+    const resendApiKey = process.env.RESEND_API_KEY;
 
-    if (!gmailUser || !gmailAppPassword) {
-      console.error('Gmail credentials not configured');
+    if (!resendApiKey) {
+      console.error('Resend API key not configured');
       return NextResponse.json({ error: 'Email service not configured' }, { status: 500 });
     }
 
-    // Create transporter with explicit SMTP settings
-    const transporter = nodemailer.createTransport({
-      host: 'smtp.gmail.com',
-      port: 587,
-      secure: false,
-      auth: {
-        user: gmailUser,
-        pass: gmailAppPassword,
-      },
-      tls: {
-        rejectUnauthorized: false,
-      },
-    });
+    const resend = new Resend(resendApiKey);
 
-    // Generate email HTML
-    const htmlContent = generateEmailHTML(analysis);
+    // Generate PDF report
+    const pdfBuffer = generatePDFReport(analysis as GEOAnalysis);
     const percentage = Math.round((analysis.overallScore / analysis.maxScore) * 100);
+    const scoreColor = getScoreColor(percentage);
+    const grade = getGrade(percentage);
 
-    // Send email
-    await transporter.sendMail({
-      from: `"GEO Audit Tool" <${gmailUser}>`,
+    // Simple, clean email HTML
+    const emailHtml = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin: 0; padding: 0; background: #000000; color: #ffffff; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
+  <div style="max-width: 500px; margin: 0 auto; padding: 40px 20px;">
+
+    <div style="text-align: center; margin-bottom: 32px;">
+      <p style="margin: 0; font-size: 11px; color: #71717a; text-transform: uppercase; letter-spacing: 0.2em;">GEO Audit Report</p>
+    </div>
+
+    <div style="text-align: center; margin-bottom: 32px;">
+      <div style="font-size: 64px; font-weight: 300; color: ${scoreColor}; line-height: 1;">
+        ${percentage}<span style="font-size: 24px; color: #52525b;">/100</span>
+      </div>
+      <p style="margin: 8px 0 0 0; font-size: 12px; color: #71717a; text-transform: uppercase; letter-spacing: 0.2em;">${grade}</p>
+    </div>
+
+    <div style="text-align: center; margin-bottom: 32px;">
+      <p style="margin: 0 0 4px 0; font-size: 13px; color: #71717a;">Analysis for</p>
+      <p style="margin: 0; font-size: 14px; color: #ffffff;">${analysis.url}</p>
+    </div>
+
+    <div style="background: #0a0a0a; border: 1px solid #27272a; padding: 20px; text-align: center; margin-bottom: 32px;">
+      <p style="margin: 0 0 4px 0; font-size: 11px; color: #71717a; text-transform: uppercase;">Summary</p>
+      <p style="margin: 0; font-size: 14px;">
+        <span style="color: #34d399;">${analysis.summary.passed} passed</span>
+        <span style="color: #52525b;"> · </span>
+        <span style="color: #fbbf24;">${analysis.summary.warnings} warnings</span>
+        <span style="color: #52525b;"> · </span>
+        <span style="color: #f87171;">${analysis.summary.failed} failed</span>
+      </p>
+    </div>
+
+    <div style="text-align: center; margin-bottom: 32px;">
+      <p style="margin: 0; font-size: 13px; color: #71717a;">Your full report is attached as a PDF.</p>
+    </div>
+
+    <div style="text-align: center; border-top: 1px solid #27272a; padding-top: 24px;">
+      <p style="margin: 0 0 12px 0; font-size: 13px; color: #71717a;">Need help improving your GEO score?</p>
+      <a href="https://johnisaacson.co.uk/#contact" style="display: inline-block; padding: 12px 24px; background: #ffffff; color: #000000; text-decoration: none; font-size: 13px; font-weight: 500;">Get in Touch</a>
+      <p style="margin-top: 24px; font-size: 11px; color: #52525b;">
+        Powered by GEO Audit Tool
+      </p>
+    </div>
+
+  </div>
+</body>
+</html>
+    `;
+
+    // Extract domain from URL for filename
+    let domain = 'website';
+    try {
+      domain = new URL(analysis.url).hostname.replace('www.', '');
+    } catch {
+      // Use default
+    }
+
+    // Send email with Resend
+    const { data, error } = await resend.emails.send({
+      from: 'GEO Audit <reports@updates.johnisaacson.co.uk>',
       to: email,
-      subject: `Your GEO Audit Report: ${percentage}/100 - ${analysis.url}`,
-      html: htmlContent,
+      subject: `Your GEO Audit Report: ${percentage}/100 - ${domain}`,
+      html: emailHtml,
+      attachments: [
+        {
+          filename: `geo-audit-${domain}-${new Date().toISOString().split('T')[0]}.pdf`,
+          content: pdfBuffer,
+        },
+      ],
     });
 
-    return NextResponse.json({ success: true });
+    if (error) {
+      console.error('Resend error:', error);
+      return NextResponse.json({ error: 'Failed to send email' }, { status: 500 });
+    }
+
+    console.log('Email sent successfully:', data?.id);
+    return NextResponse.json({ success: true, id: data?.id });
 
   } catch (error) {
     console.error('Email error:', error);
